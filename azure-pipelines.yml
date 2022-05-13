@@ -1,0 +1,75 @@
+# ASP.NET Core
+
+# Build and test ASP.NET Core projects targeting .NET Core.
+# Add steps that run tests, create a NuGet package, deploy, and more:
+# https://docs.microsoft.com/azure/devops/pipelines/languages/dotnet-core
+
+trigger:
+- none
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+variables:
+  buildConfiguration: 'Release'
+
+steps:
+  - task: DotNetCoreCLI@2
+    inputs:
+      command: 'restore'
+      projects: '**/*.sln'
+      #feedsToUse: 'config'
+    displayName: 'dotnet restore'
+
+  - task: whitesource.ws-bolt.bolt.wss.WhiteSource Bolt@20
+    displayName: 'WhiteSource Bolt'
+
+  - task: DotNetCoreCLI@2
+    inputs:
+      command: 'build'
+      projects: '**/*.sln'      
+    displayName: 'dotnet build'
+
+  - task: DotNetCoreCLI@2
+    displayName: Test
+    inputs:
+      command: 'test'
+      projects: '**/*.sln'
+      testRunTitle: 'Test'
+      arguments: '--configuration $(buildConfiguration) /p:CollectCoverage=true /p:CoverletOutputFormat=cobertura /p:threshold=60 /p:thresholdType=line /p:thresholdStat=total'
+      nobuild: true
+  - task: DotNetCoreCLI@2
+    inputs:
+      command: custom
+      custom: tool
+      arguments: install --tool-path . dotnet-reportgenerator-globaltool
+    displayName: Install ReportGenerator tool
+  
+  - script: ./reportgenerator -reports:$(Build.SourcesDirectory)/**/coverage.cobertura.xml -targetdir:$(Build.SourcesDirectory)/coverlet/reports -reporttypes:"Cobertura"
+    displayName: Create Code Coverage Reports
+  
+  - task: PublishCodeCoverageResults@1
+    displayName: 'Publish code coverage'
+    inputs:
+        codeCoverageTool: Cobertura
+        summaryFileLocation: $(Build.SourcesDirectory)/coverlet/reports/Cobertura.xml
+
+  - task: DotNetCoreCLI@2
+    displayName: "Publish"
+    inputs:
+        command: 'publish'
+        publishWebProjects: true
+        arguments: '--configuration $(BuildConfiguration) --output $(build.artifactstagingdirectory) --self-contained true -r win-x64'
+        zipAfterPublish: false
+
+  - task: PublishBuildArtifacts@1
+    displayName: "Upload Artifacts"
+    inputs:
+        pathtoPublish: '$(Build.ArtifactStagingDirectory)' 
+        artifactName: 'API' 
+
+  - task: PublishPipelineArtifact@1
+    displayName: 'Publish Pipeline Artifact'
+    inputs:
+      targetPath: 'app_offline.html'
+      artifact: offlineFile
